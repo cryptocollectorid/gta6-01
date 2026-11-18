@@ -1,53 +1,104 @@
-// Keyboard and pointer input. Held keys give a steering direction; one-shot presses (start or
-// restart, pause) are queued as bit flags and taken once by the loop, so a press between two
-// frames is never lost and never counted twice.
-
+// Keyboard + mouse input. WASD/arrows move, mouse drag orbits the camera,
+// click fires the pistol, E enters/exits a car, F punches, Space handbrakes,
+// Shift runs, P pauses/saves, M mutes, Enter confirms menus.
 export const ACTION_CONFIRM = 1;
 export const ACTION_PAUSE = 2;
+export const ACTION_ENTER_CAR = 4;
+export const ACTION_PUNCH = 8;
+export const ACTION_MUTE = 16;
+export const ACTION_SAVE = 32;
 
-const LEFT = new Set(['ArrowLeft', 'KeyA']);
-const RIGHT = new Set(['ArrowRight', 'KeyD']);
-const CONFIRM = new Set(['Space', 'Enter']);
-const PAUSE = new Set(['KeyP', 'Escape']);
-
-export function createInput(target) {
-  let left = false;
-  let right = false;
+export function createInput(canvas) {
+  const keys = new Set();
   let actions = 0;
+  let mouseDown = false;
+  let mouseClicked = false;
+  let downX = 0;
+  let downY = 0;
+  let dragX = 0;
+  let dragY = 0;
+  let wheelDelta = 0;
+
+  function codeOf(event) {
+    return event.code;
+  }
 
   window.addEventListener('keydown', (event) => {
-    if (LEFT.has(event.code)) left = true;
-    else if (RIGHT.has(event.code)) right = true;
-    else if (CONFIRM.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_CONFIRM;
-    } else if (PAUSE.has(event.code)) {
-      if (!event.repeat) actions |= ACTION_PAUSE;
-    } else return;
+    if (event.repeat) return;
+    keys.add(codeOf(event));
+    if (event.code === 'Enter' || event.code === 'Space') actions |= ACTION_CONFIRM;
+    if (event.code === 'KeyP' || event.code === 'Escape') actions |= ACTION_PAUSE;
+    if (event.code === 'KeyE') actions |= ACTION_ENTER_CAR;
+    if (event.code === 'KeyF') actions |= ACTION_PUNCH;
+    if (event.code === 'KeyM') actions |= ACTION_MUTE;
+    if (event.code === 'KeyQ') actions |= ACTION_SAVE;
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(event.code)) {
+      event.preventDefault();
+    }
+  });
+  window.addEventListener('keyup', (event) => keys.delete(codeOf(event)));
+  window.addEventListener('blur', () => keys.clear());
+
+  canvas.addEventListener('pointerdown', (event) => {
+    mouseDown = true;
+    downX = event.clientX;
+    downY = event.clientY;
+    canvas.setPointerCapture(event.pointerId);
+  });
+  canvas.addEventListener('pointerup', (event) => {
+    mouseDown = false;
+    // A press without much movement is a click (shoot); a drag orbits.
+    if (Math.hypot(event.clientX - downX, event.clientY - downY) < 6) mouseClicked = true;
+  });
+  canvas.addEventListener('pointercancel', () => { mouseDown = false; });
+  canvas.addEventListener('pointermove', (event) => {
+    if (!mouseDown) return;
+    dragX += event.movementX;
+    dragY += event.movementY;
+  });
+  canvas.addEventListener('wheel', (event) => {
+    wheelDelta += event.deltaY;
     event.preventDefault();
-  });
-  window.addEventListener('keyup', (event) => {
-    if (LEFT.has(event.code)) left = false;
-    else if (RIGHT.has(event.code)) right = false;
-  });
-  // A key released while the tab is hidden never sends keyup: let go of everything on blur.
-  window.addEventListener('blur', () => {
-    left = false;
-    right = false;
-  });
-  target.addEventListener('pointerdown', () => {
-    actions |= ACTION_CONFIRM;
-  });
+  }, { passive: false });
+  canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+
+  function axis(negative, positive) {
+    const n = keys.has(negative) ? 1 : 0;
+    const p = keys.has(positive) ? 1 : 0;
+    return p - n;
+  }
 
   return {
-    /** -1 for left, 1 for right, 0 for neither or both. */
-    direction() {
-      return (right ? 1 : 0) - (left ? 1 : 0);
+    // -1..1 forward (W / ArrowUp) and strafe (D / ArrowRight).
+    move() {
+      return {
+        forward: axis('KeyS', 'KeyW') + axis('ArrowDown', 'ArrowUp'),
+        strafe: axis('KeyA', 'KeyD') + axis('ArrowLeft', 'ArrowRight'),
+      };
     },
-    /** The one-shot presses since the last call, as ACTION_* flags. */
+    sprint() { return keys.has('ShiftLeft') || keys.has('ShiftRight'); },
+    handbrake() { return keys.has('Space'); },
     takeActions() {
       const taken = actions;
       actions = 0;
       return taken;
     },
+    takeClick() {
+      const clicked = mouseClicked;
+      mouseClicked = false;
+      return clicked;
+    },
+    takeDrag() {
+      const d = { x: dragX, y: dragY };
+      dragX = 0;
+      dragY = 0;
+      return d;
+    },
+    takeWheel() {
+      const w = wheelDelta;
+      wheelDelta = 0;
+      return w;
+    },
+    anyKey() { return keys.size > 0; },
   };
 }

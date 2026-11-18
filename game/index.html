@@ -3,17 +3,120 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Block Dodger</title>
+<title>Bahia Verde — Sun &amp; Sirens</title>
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; background: #11141b; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #10141b; font-family: 'Segoe UI', system-ui, sans-serif; }
   #game { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
-  /* Read aloud, never shown: the status line screen readers announce. */
   #status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  #hud { position: fixed; inset: 0; pointer-events: none; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.7); }
+  #cash { position: absolute; top: 14px; left: 16px; font-size: 28px; font-weight: 800; color: #7dff9a; }
+  #objective { position: absolute; top: 52px; left: 16px; max-width: 460px; font-size: 15px; font-weight: 600; line-height: 1.35; background: rgba(0,0,0,.45); padding: 8px 12px; border-radius: 8px; border-left: 4px solid #ffd24a; }
+  #stars { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); font-size: 30px; letter-spacing: 4px; color: #ffd24a; }
+  #stars.hot { animation: pulse 0.8s infinite alternate; }
+  @keyframes pulse { from { opacity: 1; } to { opacity: .55; } }
+  #minimap { position: absolute; top: 14px; right: 16px; width: 180px; height: 180px; border: 2px solid rgba(255,255,255,.6); border-radius: 8px; background: #20242c; }
+  #health-wrap { position: absolute; left: 16px; bottom: 52px; width: 220px; }
+  #health-label { font-size: 12px; font-weight: 700; letter-spacing: 1px; margin-bottom: 4px; }
+  #health-bar { height: 12px; background: rgba(0,0,0,.55); border-radius: 6px; overflow: hidden; }
+  #health-fill { height: 100%; width: 100%; background: #4ade80; border-radius: 6px; }
+  #health-fill.low { background: #ef4444; }
+  #speed { position: absolute; right: 20px; bottom: 52px; font-size: 26px; font-weight: 800; }
+  #hint { position: absolute; left: 16px; bottom: 14px; font-size: 13px; opacity: .85; }
+  #toast { position: absolute; top: 22%; left: 50%; transform: translateX(-50%); font-size: 20px; font-weight: 700; background: rgba(0,0,0,.6); padding: 10px 18px; border-radius: 10px; opacity: 0; transition: opacity .3s; text-align: center; max-width: 80%; }
+  #toast.show { opacity: 1; }
+  #crosshair { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid #fff; border-radius: 50%; display: none; }
+  .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(8, 12, 20, .72); color: #fff; z-index: 10; }
+  .panel { max-width: 560px; margin: 20px; padding: 32px 36px; background: rgba(16, 22, 34, .92); border: 1px solid rgba(255,210,74,.5); border-radius: 14px; text-align: center; }
+  .panel h1 { margin: 0 0 6px; font-size: 44px; letter-spacing: 2px; color: #ffd24a; }
+  .panel h2 { margin: 0 0 12px; font-size: 26px; color: #ffd24a; }
+  .panel p { font-size: 16px; line-height: 1.55; color: #d8dee8; }
+  .panel .sub { font-size: 14px; color: #9aa8bd; }
+  .panel button { pointer-events: auto; margin: 8px 6px 0; padding: 12px 26px; font-size: 16px; font-weight: 700; color: #111; background: #ffd24a; border: none; border-radius: 9px; cursor: pointer; }
+  .panel button.secondary { background: #3a4356; color: #fff; }
+  .panel button:hover { filter: brightness(1.1); }
+  .keys { text-align: left; font-size: 14px; line-height: 1.7; color: #c8d2e0; margin: 14px auto 4px; display: inline-block; }
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game" aria-label="Block Dodger: move the paddle left and right to dodge falling blocks and catch coins"></canvas>
+<canvas id="game" aria-label="Bahia Verde: an open-world crime game. Drive, steal cars, outrun the police and finish five jobs for Mama Rosa."></canvas>
 <p id="status" role="status" aria-live="polite"></p>
+<div id="hud">
+  <div id="cash">$0</div>
+  <div id="objective"></div>
+  <div id="stars">☆☆☆☆☆</div>
+  <canvas id="minimap" width="180" height="180"></canvas>
+  <div id="health-wrap"><div id="health-label">HEALTH</div><div id="health-bar"><div id="health-fill"></div></div></div>
+  <div id="speed"></div>
+  <div id="hint">WASD move/drive · E enter/exit car · F punch · Click shoot · Space handbrake · Shift run · P pause · Q save · M mute</div>
+  <div id="toast"></div>
+  <div id="crosshair"></div>
+</div>
+
+<div id="menu-overlay" class="overlay">
+  <div class="panel">
+    <h1>BAHIA VERDE</h1>
+    <p class="sub">Sun &amp; Sirens — an open-world crime game</p>
+    <p>You are <b>Rex Marlowe</b>, a getaway driver who owes Mama Rosa one favour too many. Five jobs stand between you and a clean slate: steal cars, run the docks, shake the police, settle the Venn crew, and take the bank.</p>
+    <div class="keys">
+      <b>WASD</b> move / drive &nbsp;·&nbsp; <b>Mouse drag</b> camera &nbsp;·&nbsp; <b>E</b> enter / exit car<br>
+      <b>F</b> punch &nbsp;·&nbsp; <b>Click</b> shoot &nbsp;·&nbsp; <b>Space</b> handbrake &nbsp;·&nbsp; <b>Shift</b> run<br>
+      <b>P</b> pause &nbsp;·&nbsp; <b>Q</b> save &nbsp;·&nbsp; <b>M</b> mute &nbsp;·&nbsp; <b>Enter</b> confirm
+    </div>
+    <div>
+      <button id="new-btn">New Game</button>
+      <button id="continue-btn" class="secondary">Continue</button>
+    </div>
+    <p class="sub">Progress saves to this browser. All original: Bahia Verde, its people and its story are invented here.</p>
+  </div>
+</div>
+
+<div id="card-overlay" class="overlay" style="display:none">
+  <div class="panel">
+    <h2 id="card-title"></h2>
+    <p id="card-brief"></p>
+    <p id="card-reward"></p>
+    <button id="card-btn">Start Job (Enter)</button>
+  </div>
+</div>
+
+<div id="pause-overlay" class="overlay" style="display:none">
+  <div class="panel">
+    <h2>Paused</h2>
+    <p>Take a breath, Rex. The city waits.</p>
+    <button id="resume-btn">Resume</button>
+    <button id="save-btn" class="secondary">Save Progress</button>
+  </div>
+</div>
+
+<div id="busted-overlay" class="overlay" style="display:none">
+  <div class="panel">
+    <h2>BUSTED</h2>
+    <p>The Bahia Verde police caught up with you.</p>
+    <p id="busted-lost"></p>
+    <button id="busted-btn">Walk Out (Hospital)</button>
+  </div>
+</div>
+
+<div id="wasted-overlay" class="overlay" style="display:none">
+  <div class="panel">
+    <h2>WASTED</h2>
+    <p>Rex went down. The job that got you starts over.</p>
+    <button id="wasted-btn">Get Up (Hospital)</button>
+  </div>
+</div>
+
+<div id="complete-overlay" class="overlay" style="display:none">
+  <div class="panel">
+    <h2>STORY COMPLETE</h2>
+    <p>All five jobs done. The debt is paid — Bahia Verde is yours now.</p>
+    <p id="complete-cash"></p>
+    <button id="complete-btn">Keep Roaming</button>
+  </div>
+</div>
+
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

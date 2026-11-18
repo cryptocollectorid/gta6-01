@@ -1,61 +1,89 @@
-// Every tuning number and colour in one place. The playfield is a fixed 1280x720 logical area;
-// the renderer scales it to the window, so no rule below depends on the screen size.
+// Bahia Verde — tuning constants. One place for every number the rest of the
+// game reads, so balancing is an edit here and not a hunt through systems.
+export const WORLD = {
+  half: 210, // playable world spans [-210, 210] on x and z
+  roadPitch: 60, // distance between road centrelines
+  roadWidth: 14,
+  blockSize: 46, // 60 - 14
+  beachZ: 192, // sand starts here (south edge)
+  oceanZ: 208, // water plane starts here
+};
 
-export const FIELD = { width: 1280, height: 720, groundY: 664 };
-
-/** The simulation's fixed step, in seconds: 60 updates a second whatever the display's rate. */
-export const STEP = 1 / 60;
+export const ROADS = [-180, -120, -60, 0, 60, 120, 180];
 
 export const PLAYER = {
-  width: 72,
-  height: 24,
-  speed: 560,
-  invulnerable: 1.5,
+  walkSpeed: 6.5,
+  runSpeed: 10,
+  radius: 0.6,
+  health: 100,
+  punchDamage: 34,
+  punchRange: 2.4,
+  punchArc: 1.9, // radians, half-angle in front
+  punchCooldown: 0.45,
+  shootDamage: 50,
+  shootRange: 42,
+  shootCone: 0.42, // radians off the camera forward
+  ammoMax: 12,
 };
 
-export const LIVES = 3;
-
-export const BLOCK = {
-  minWidth: 40,
-  maxWidth: 110,
-  height: 36,
-  speed: 240,
-  speedPerLevel: 30,
-  speedJitter: 90,
-  interval: 0.55,
-  intervalScale: 0.88,
-  minInterval: 0.14,
-  dodgePoints: 1,
+export const CAR = {
+  accel: 15,
+  brake: 34,
+  reverseAccel: 10,
+  maxSpeed: 40,
+  maxReverse: 11,
+  turnRate: 2.1, // rad/s at full lock, scaled by speed
+  radius: 1.7,
+  drag: 0.55,
 };
 
-export const COIN = {
-  size: 24,
-  speed: 190,
-  speedPerLevel: 14,
-  interval: 1.4,
-  intervalJitter: 0.8,
-  points: 10,
+export const TRAFFIC = {
+  count: 14,
+  parked: 6,
+  speedMin: 8,
+  speedMax: 13,
 };
 
-/** Seconds of play per level, and the last level: speeds and spawn rates stop growing there. */
-export const LEVEL = { seconds: 12, max: 12 };
-
-/** How many falling things can exist at once; the pool is allocated once, at boot. */
-export const POOL_SIZE = 64;
-
-export const PALETTE = {
-  backdrop: '#11141b',
-  sky: '#1b1f2a',
-  ground: '#2a3040',
-  player: '#4fc3f7',
-  block: '#e5534b',
-  coin: '#f2c94c',
-  panel: '#252b38',
-  text: '#eef1f5',
-  muted: '#8b93a3',
+export const PEDS = {
+  count: 22,
+  speedMin: 1.1,
+  speedMax: 2.1,
 };
 
-export const FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
+export const POLICE = {
+  maxCars: 4,
+  accel: 17,
+  maxSpeed: 36,
+  bustRadius: 4.2,
+  bustSpeed: 2.6, // player must be slower than this to be busted
+  bustTime: 1.2, // seconds inside the radius while slow
+};
 
-/** Where the best score is kept between visits (this browser only). */
-export const BEST_KEY = 'block-dodger.best';
+export const WANTED = {
+  stealMoving: 1,
+  hitPed: 2,
+  shoot: 1,
+  ramPolice: 1,
+  quietSeconds: 15, // no crime for this long before stars start to fall
+  decaySeconds: 8, // one star per this many quiet seconds
+  max: 5,
+};
+
+// Named places in Bahia Verde. All original: a sun-soaked port city on the
+// Verde coast, its own streets, its own people, nothing borrowed from any
+// commercial game. `approach` is the spot in front of the building where a
+// job's marker sits — the building itself is solid, so the marker must be
+// reachable from the street.
+export const PLACES = {
+  start: { x: 0, z: -30, label: 'Calle Sol' },
+  garage: { x: -150, z: -150, approach: { x: -150, z: -126 }, label: "Rosa's Garage" },
+  cafe: { x: 90, z: -90, approach: { x: 90, z: -66 }, label: "Mama Rosa's Cafe" },
+  safehouse: { x: -90, z: 90, approach: { x: -90, z: 66 }, label: 'The Safehouse' },
+  bank: { x: 150, z: 30, approach: { x: 126, z: 30 }, label: 'Bahia Verde Bank' },
+  docks: { x: 30, z: 186, label: 'Port Docks' },
+  alley: { x: 150, z: -150, approach: { x: 150, z: -126 }, label: 'Venn Alley' },
+  hospital: { x: -150, z: 30, label: 'St. Marina Hospital' },
+};
+
+export const SAVE_KEY = 'bahia-verde-save-v1';
+export const STEP = 1 / 60;

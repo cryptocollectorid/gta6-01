@@ -1,79 +1,87 @@
-// The screenshot scenes behind ?shot=start|play|end. Each one plays the real rules forward from a
-// fresh world for a fixed number of steps, steered by a simple autopilot (look ahead each way the
-// paddle could move, keep clear of blocks, chase the lowest coin when that is safe), so the frame
-// is what a short game really looks like and the same seed always gives the same frame.
-import { FIELD, PLAYER, STEP } from './config.js';
-import { EVENT_OVER, KIND_BLOCK } from './world.js';
-import { SCREEN_OVER, SCREEN_PLAY, SCREEN_TITLE } from './render.js';
+// The four screenshot scenes behind ?shot=start|drive|chase|mission. Each one
+// sets the real game state (positions, wanted level, mission) and returns how
+// many fixed steps the main loop should run forward plus an autopilot input,
+// so the frame is what a short stretch of real play looks like. The cover
+// (1-start) is the title screen over the city; the others show driving,
+// a police chase and a mission, each with the HUD and minimap on screen.
+import { PLACES } from './config.js';
 
-const START_SECONDS = 5;
-const PLAY_SECONDS = 26;
-const END_LIMIT_SECONDS = 600;
-/**
- * How far ahead, in seconds, the autopilot checks each way it could move: the play scene's pilot
- * looks well ahead and keeps all its lives; the end scene's looks only a moment ahead, so it is
- * caught out once the blocks speed up, as a hurried player is.
- */
-const HORIZON_PLAY = 0.7;
-const HORIZON_END = 0.25;
-const SAMPLE = 1 / 30;
-const DIRECTIONS = [0, -1, 1];
-/** Extra room, each side, it keeps between the paddle and a block. */
-const MARGIN = 10;
-
-/** Seconds until moving in `direction` (-1, 0, 1) runs the paddle into a block; Infinity when it never does. */
-function timeToHit(state, direction, horizon) {
-  const player = state.player;
-  for (let t = SAMPLE; t <= horizon; t += SAMPLE) {
-    const x = Math.min(FIELD.width - player.width, Math.max(0, player.x + direction * PLAYER.speed * t));
-    for (let index = 0; index < state.items.length; index += 1) {
-      const item = state.items[index];
-      if (!item.active || item.kind !== KIND_BLOCK) continue;
-      const y = item.y + item.speed * t;
-      if (y + item.height > player.y && y < player.y + player.height && item.x < x + player.width + MARGIN && item.x + item.width > x - MARGIN) return t;
-    }
-  }
-  return Infinity;
+function hideMenu() {
+  const menu = document.getElementById('menu-overlay');
+  if (menu) menu.style.display = 'none';
 }
 
-/** Of the safe ways to move, the one toward the lowest coin (or the centre); else the one that is hit last. */
-function autopilot(state, horizon) {
-  const player = state.player;
-  let coin = null;
-  for (let index = 0; index < state.items.length; index += 1) {
-    const item = state.items[index];
-    if (item.active && item.kind !== KIND_BLOCK && (coin === null || item.y > coin.y)) coin = item;
+export function stageShot(name, G) {
+  const { playerCar, player, missions, wanted, police } = G;
+  hideMenu();
+  if (name === 'drive') {
+    G.screen = 'play';
+    missions.start(0);
+    player.inCar = true;
+    player.mesh.visible = false;
+    playerCar.place(0, -56.5, Math.PI / 2);
+    playerCar.active = true;
+    playerCar.speed = 18;
+    return { steps: 150, autopilot: { forward: 1, strafe: 0 } };
   }
-  const target = coin === null ? FIELD.width / 2 : coin.x + coin.width / 2;
-  const centre = player.x + player.width / 2;
-  const wanted = target > centre + 8 ? 1 : target < centre - 8 ? -1 : 0;
-  let best = wanted;
-  let bestTime = timeToHit(state, wanted, horizon);
-  for (let index = 0; index < DIRECTIONS.length && bestTime !== Infinity; index += 1) {
-    const time = timeToHit(state, DIRECTIONS[index], horizon);
-    if (time > bestTime) {
-      bestTime = time;
-      best = DIRECTIONS[index];
+  if (name === 'chase') {
+    G.screen = 'play';
+    missions.start(2);
+    wanted.set(3);
+    player.inCar = true;
+    player.mesh.visible = false;
+    playerCar.place(-40, 3.5, Math.PI / 2);
+    playerCar.active = true;
+    playerCar.speed = 30;
+    // Clear the chase corridor (the road ahead of the player) so the frame is
+    // a chase, not a traffic jam: any traffic car near it moves far west.
+    // Cars on other roads can still turn in, so the corridor is wide.
+    for (const car of [...G.traffic.moving, ...G.traffic.parked]) {
+      if (!car.active) continue;
+      const inCorridor = car.pos.x > -100 && car.pos.x < 200 && Math.abs(car.pos.z) < 40;
+      if (inCorridor) {
+        car.pos.set(-170 + G.random() * 40, 0, -120 + 3.5);
+        car.axis = 'x';
+        car.dir = 1;
+        car.heading = Math.PI / 2;
+        car.sync();
+      }
     }
+    // Three police cars closing in from behind and the side — close enough
+    // to be in the frame when it is taken, far enough that the chase is
+    // still moving (they top out just under the player's speed).
+    police.cars[0].spawn(-70, 3.5);
+    police.cars[1].spawn(-62, -28);
+    police.cars[2].spawn(-52, 32);
+    // A camera ahead of the car looking back at it, so the frame shows the
+    // player car head-on with the police closing in behind it — the chase
+    // itself — instead of a plain chase cam that hides the pursuers.
+    G.camSide = 3.0;
+    return { steps: 150, autopilot: { forward: 1, strafe: 0 } };
   }
-  return best;
-}
-
-/**
- * Set `world` to the named scene (start, play or end; any other name is start) and return the
- * screen to draw over it and the best score to show.
- */
-export function stageShot(name, world) {
-  world.reset();
-  if (name !== 'play' && name !== 'end') {
-    for (let index = 0; index < START_SECONDS / STEP; index += 1) world.step(STEP, 0, true);
-    return { screen: SCREEN_TITLE, best: 0 };
+  if (name === 'mission') {
+    G.screen = 'play';
+    missions.start(1);
+    missions.stepIndex = 1;
+    missions.placeBeacon();
+    player.inCar = false;
+    player.mesh.visible = true;
+    // On foot at the docks, just outside the grab radius: the beacon and the
+    // objective show, and the step does not complete while staging.
+    player.pos.set(PLACES.docks.x - 9, 0, PLACES.docks.z - 4);
+    player.heading = Math.atan2(PLACES.docks.x - player.pos.x, PLACES.docks.z - player.pos.z);
+    G.camYaw = player.heading + Math.PI;
+    return { steps: 90, autopilot: { forward: 0, strafe: 0 } };
   }
-  const limit = name === 'end' ? END_LIMIT_SECONDS : PLAY_SECONDS;
-  const horizon = name === 'end' ? HORIZON_END : HORIZON_PLAY;
-  for (let index = 0; index < limit / STEP; index += 1) {
-    if (world.step(STEP, autopilot(world.state, horizon), false) & EVENT_OVER) break;
+  // start: the title screen over a high view of the city.
+  G.screen = 'title';
+  const menu = document.getElementById('menu-overlay');
+  if (menu) menu.style.display = 'flex';
+  const continueBtn = document.getElementById('continue-btn');
+  if (continueBtn && !window.localStorage.getItem('bahia-verde-save-v1')) {
+    continueBtn.style.display = 'none';
   }
-  const over = world.state.lives === 0;
-  return { screen: over ? SCREEN_OVER : SCREEN_PLAY, best: world.state.score };
+  G.camera.position.set(120, 85, 150);
+  G.camera.lookAt(0, 0, 0);
+  return { steps: 0, autopilot: null };
 }
